@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.TimeUnit;
 
 import sfs2x.client.entities.Room;
 import ygraph.ai.smartfox.games.BaseGameGUI;
@@ -28,9 +29,8 @@ public class Main extends GamePlayer {
     private String passwd;
     
     private boolean isBlack;
-    private ArrayList<Integer> boardState; // eventually want to build a state class instead
- 
-	
+    private Board board; 
+
     /**
      * The main method
      * @param args for name and passwd (current, any string would work)
@@ -42,7 +42,7 @@ public class Main extends GamePlayer {
     	Main player = new Main(userName, passwd);
 
 		if(player.getGameGUI() == null) {
-    		player.Go();
+            player.Go();
     	}
     	else {
     		BaseGameGUI.sys_setup();
@@ -70,9 +70,9 @@ public class Main extends GamePlayer {
 
     @Override
     public void onLogin() {
-    	System.out.println("Login Successful!");
-    	userName = gameClient.getUserName();
-    	
+        System.out.println("Login Successful!");
+        userName = gameClient.getUserName();
+    
     	//join room
 		if (gamegui != null) {
 			gamegui.setRoomInformation(gameClient.getRoomList());
@@ -83,18 +83,19 @@ public class Main extends GamePlayer {
     @Override
     public boolean handleGameMessage(String messageType, Map<String, Object> msgDetails) {
     	//called by the GameClient when it receives a game-related message
-    	System.out.println("Message type: " + messageType + "\nDetails: " + msgDetails.toString());
-    	
-    	switch (messageType) {
+    System.out.println("Message type: " + messageType + "\nDetails: " + msgDetails.toString());
+    
+    switch (messageType) {
             case GameMessage.GAME_STATE_BOARD:
                 //initial board state sent when joining a game
-                this.boardState = (ArrayList<Integer>) msgDetails.get(AmazonsGameMessage.GAME_STATE);
-                gamegui.setGameState(this.boardState);
-                System.out.println("Game state initialized.");
+                ArrayList<Integer> gameState = (ArrayList<Integer>) msgDetails.get(AmazonsGameMessage.GAME_STATE);
+                this.board = new Board(gameState);
+                gamegui.setGameState(gameState);
+                System.out.println("initialized...");
                 break;
 
             case GameMessage.GAME_ACTION_START:
-                //signals the start of the game and indicates if we are Black or White
+
                 String blackPlayerName = (String) msgDetails.get(AmazonsGameMessage.PLAYER_BLACK);
                 String whitePlayerName = (String) msgDetails.get(AmazonsGameMessage.PLAYER_WHITE);
                 
@@ -108,12 +109,10 @@ public class Main extends GamePlayer {
                 break;
 
             case GameMessage.GAME_ACTION_MOVE:
-                 //Update the GUI with the opponent's move
-                gamegui.updateGameState(msgDetails);
+                updateGUI(msgDetails);
                 
-                //TODO: Update internal boardState here
-                
-                //our turn, make a move
+                Move opponentMove = new Move(msgDetails);
+                board.makeMove(opponentMove);              
                 makeMove();
                 break;
                 
@@ -121,18 +120,44 @@ public class Main extends GamePlayer {
                 break;
         }
 
-    	return true;   	
+    return true;   	
     }
-    
-     
-     
+
     private void makeMove() {
-        System.out.println("Our move...");
+        // random move generation for now, testing board and move logic, delayed 1 second before sending move to server
+        int myColor = this.isBlack? Board.black:Board.white;
+        ArrayList<Move> possibleMoves = board.getAllPossibleMoves(myColor);
+        
+        if (possibleMoves.isEmpty()) {
+            System.out.println("No moves left, rip bozo");
+            return;
+        }
+        
+        int randomIndex = (int)(Math.random()*possibleMoves.size());
+        Move selectedMove = possibleMoves.get(randomIndex);
+        System.out.println(selectedMove.toString());
+       
+        try {
+            TimeUnit.SECONDS.sleep(1);
+        } catch (InterruptedException e) {
+            System.out.println("interrupted");
+        }
+    
+        gameClient.sendMoveMessage(selectedMove.toServerMap());
+        board.makeMove(selectedMove);
+        updateGUI(selectedMove.toServerMap());
+    }
+
+    private void updateGUI(Map<String, Object> msgDetails) {
+        ArrayList<Integer> qCurr = (ArrayList<Integer>) msgDetails.get(AmazonsGameMessage.QUEEN_POS_CURR);
+        ArrayList<Integer> qNext = (ArrayList<Integer>) msgDetails.get(AmazonsGameMessage.QUEEN_POS_NEXT);
+        ArrayList<Integer> arrow = (ArrayList<Integer>) msgDetails.get(AmazonsGameMessage.ARROW_POS);
+        gamegui.updateGameState(qCurr, qNext, arrow);
     }
 
     @Override
     public String userName() {
-    	return userName;
+        return userName;
     }
 
 	@Override
@@ -147,8 +172,7 @@ public class Main extends GamePlayer {
 
 	@Override
 	public void connect() {
-    	gameClient = new GameClient(userName, passwd, this);			
+        gameClient = new GameClient(userName, passwd, this);			
 	}
 
- 
 }
