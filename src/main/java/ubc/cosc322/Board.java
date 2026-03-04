@@ -155,8 +155,8 @@ public class Board {
             int currCol = c + dc;
             
             while (currRow>=0 && currRow<rows && 
-                   currCol>=0 && currCol<cols && 
-                   board[currRow][currCol] == empty) {
+                    currCol>=0 && currCol<cols && 
+                    board[currRow][currCol] == empty) {
                 targets.add(new Point(currRow, currCol));
                 currRow += dr;
                 currCol += dc;
@@ -164,5 +164,21 @@ public class Board {
         }
         return targets;
     }
+
+    public int getCell(int r, int c) { return board[r][c]; }
+
+    public Point[] getQueens(int color) {
+        int teamIndex = (color == black) ? 0 : 1;
+        Point[] out = new Point[4];
+        for (int i = 0; i < 4; i++) {
+            Point q = queens[teamIndex][i];
+            out[i] = (q == null) ? null : new Point(q.row, q.col);
+        }
+        return out;
+    }
+
+    public ArrayList<Point> sliderMovesFrom(int r, int c) { return getSliderMoves(r, c); }
+
+    public ArrayList<Point> sliderMovesFrom(Point p) { return getSliderMoves(p.row, p.col); }
 
 }
