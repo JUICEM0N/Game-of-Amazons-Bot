@@ -14,6 +14,7 @@ import ygraph.ai.smartfox.games.GameMessage;
 import ygraph.ai.smartfox.games.GamePlayer;
 import ygraph.ai.smartfox.games.amazons.AmazonsGameMessage;
 
+
 /**
  * An example illustrating how to implement a GamePlayer
  * @author Yong Gao (yong.gao@ubc.ca)
@@ -21,6 +22,8 @@ import ygraph.ai.smartfox.games.amazons.AmazonsGameMessage;
  *
  */
 public class Main extends GamePlayer {
+
+    private static final int TIME_LIMIT = 5000; // In ms
 
     private GameClient gameClient; 
     private BaseGameGUI gamegui;
@@ -123,31 +126,32 @@ public class Main extends GamePlayer {
     return true;   	
     }
 
+    private final SearchEngine engine = new SearchEngine();
+
     private void makeMove() {
-        // random move generation for now, testing board and move logic, delayed 1 second before sending move to server
-        int myColor = this.isBlack? Board.black:Board.white;
-        ArrayList<Move> possibleMoves = board.getAllPossibleMoves(myColor);
-        
-        if (possibleMoves.isEmpty()) {
-            System.out.println("No moves left, rip bozo");
+        int myColor = this.isBlack ? Board.black : Board.white;
+        Move selectedMove = engine.chooseMove(board, myColor, TIME_LIMIT);
+
+        if (selectedMove == null) {
+            String me = userName;
+            String winner = isBlack ? "White" : "Black";
+            String loser  = isBlack ? "Black" : "White";
+
+            System.out.println("GAME OVER: " + loser + " (" + me + ") has no legal moves, rip bozo");
+            System.out.println("WINNER: " + winner + " player!");
+
+            engine.printGameStats();
             return;
         }
-        
-        int randomIndex = (int)(Math.random()*possibleMoves.size());
-        Move selectedMove = possibleMoves.get(randomIndex);
-        System.out.println(selectedMove.toString());
-       
-        try {
-            TimeUnit.SECONDS.sleep(1);
-        } catch (InterruptedException e) {
-            System.out.println("interrupted");
-        }
-    
+
+        System.out.println("Chosen: " + selectedMove);
+
         gameClient.sendMoveMessage(selectedMove.toServerMap());
         board.makeMove(selectedMove);
         updateGUI(selectedMove.toServerMap());
     }
 
+    @SuppressWarnings("unchecked")
     private void updateGUI(Map<String, Object> msgDetails) {
         ArrayList<Integer> qCurr = (ArrayList<Integer>) msgDetails.get(AmazonsGameMessage.QUEEN_POS_CURR);
         ArrayList<Integer> qNext = (ArrayList<Integer>) msgDetails.get(AmazonsGameMessage.QUEEN_POS_NEXT);
