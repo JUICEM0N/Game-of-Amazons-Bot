@@ -7,28 +7,29 @@ public class Evaluator {
     private static final int W_TERRITORY = 2;
 
     public static int evaluate(Board b, int myColor) {
+        return evaluateSequential(b, myColor);
+    }
+
+    private static int evaluateSequential(Board b, int myColor) {
         int opp = (myColor == Board.black) ? Board.white : Board.black;
 
         int myMoves = b.getAllPossibleMoves(myColor).size();
         int opMoves = b.getAllPossibleMoves(opp).size();
         int mobilityScore = myMoves - opMoves;
 
-        int territoryScore = territoryDiff(b, myColor, opp);
-
-        // Eval info
-        System.out.println(
-            "[Eval] mobility=" + mobilityScore +
-            " territory=" + territoryScore +
-            " total=" + (W_MOBILITY * mobilityScore + W_TERRITORY * territoryScore)
-        );
+        int territoryScore = territoryDiffSequential(b, myColor, opp);
 
         return W_MOBILITY * mobilityScore + W_TERRITORY * territoryScore;
     }
 
-    private static int territoryDiff(Board b, int myColor, int oppColor) {
+    private static int territoryDiffSequential(Board b, int myColor, int oppColor) {
         int[][] myDist = queenMoveDistanceMap(b, myColor);
         int[][] opDist = queenMoveDistanceMap(b, oppColor);
 
+        return calculateDiff(b, myDist, opDist);
+    }
+
+    private static int calculateDiff(Board b, int[][] myDist, int[][] opDist) {
         int my = 0, opp = 0;
 
         for (int r = 0; r < Board.rows; r++) {
