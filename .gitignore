@@ -9,3 +9,6 @@ bin/
 *.ear
 .DS_Store
 Thumbs.db
+
+
+.idea/
