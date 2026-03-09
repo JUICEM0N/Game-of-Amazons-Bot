@@ -1,12 +1,14 @@
 package ubc.cosc322;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class SearchEngine {
 
     private static final int INF = 1_000_000_000;
     private static final int MAX_DEPTH = 50;
-    private static final boolean DEBUG = true;
+    private static final boolean DEBUG = false;
+    
     // private long prunedBranches = 0;
     // private long nodes = 0;
 
@@ -45,15 +47,15 @@ public class SearchEngine {
             // long elapsed = System.currentTimeMillis() - moveStartMs;
 
             if (DEBUG) {
-                long nps = (nodes * 1000L) / (Math.max(1, (System.currentTimeMillis() - moveStartMs)));
-                System.out.println("[ID] depth=" + depth +
-                        " bestScore=" + res.score +
-                        " bestMove=" + res.bestMove +
-                        " iterTime=" + iterElapsed + "ms" +
-                        " nodes=" + nodes +
-                        " cutoffs=" + cutoffs +
-                        " prunedMoves=" + prunedMoves +
-                        " nps=" + nps);
+                // long nps = (nodes * 1000L) / (Math.max(1, (System.currentTimeMillis() - moveStartMs)));
+                // System.out.println("[ID] depth=" + depth +
+                //         " bestScore=" + res.score +
+                //         " bestMove=" + res.bestMove +
+                //         " iterTime=" + iterElapsed + "ms" +
+                //         " nodes=" + nodes +
+                //         " cutoffs=" + cutoffs +
+                //         " prunedMoves=" + prunedMoves +
+                //         " nps=" + nps);
             }
 
             // System.out.println(
@@ -63,11 +65,12 @@ public class SearchEngine {
             //     " time=" + elapsed + "ms"
             // );
 
-            if (res.timedOut) break;
             if (res.bestMove != null) {
                 bestMove = res.bestMove;
                 bestScore = res.score;
             }
+            
+            if (res.timedOut) break;
         }
 
         if (bestMove == null) {
@@ -84,7 +87,10 @@ public class SearchEngine {
         totalSearchTimeMs += moveElapsedMs;
         totalMovesPlayed++;
 
-        if (DEBUG) System.out.println("[MOVE DONE] time=" + moveElapsedMs + "ms bestScore=" + bestScore + " bestMove=" + bestMove);
+        System.out.println("[Move Done] Best Move: " + bestMove + 
+                           " | Score: " + bestScore + 
+                           " | Nodes: " + nodes + 
+                           " | Time: " + moveElapsedMs + "ms");
         
         return bestMove;
     }
@@ -95,10 +101,9 @@ public class SearchEngine {
         if (moves.isEmpty()) 
             return new SearchResult(null, -INF + 1, false);
         
-        moves.sort((a, b) -> Integer.compare(
-            quickMoveScore(root, b, myColor),
-            quickMoveScore(root, a, myColor)
-        ));
+        Map<Move, Integer> scores = moves.parallelStream().collect(Collectors.toMap(m -> m, m -> quickMoveScore(root, m, myColor),
+                (v1, v2) -> v1));
+        moves.sort((a, b) -> Integer.compare(scores.get(b), scores.get(a)));
 
         int alpha = -INF;
         int beta = INF;
@@ -115,12 +120,14 @@ public class SearchEngine {
 
             int score = alphaBeta(child, depth - 1, alpha, beta, false, myColor, deadline);
 
-            // Eval Info
-            System.out.println(
-                "[Root Eval] depth=" + depth +
-                " move=" + m +
-                " score=" + score
-            );
+            if (System.nanoTime() >= deadline) 
+                return new SearchResult(bestMove, bestScore, true);
+
+            // System.out.println(\n            
+            //     "[Root Eval] depth=" + depth +\n            
+            //     " move=" + m +\n            
+            //     " score=" + score\n           
+            // );
 
             if (score > bestScore) {
                 bestScore = score;
@@ -147,11 +154,13 @@ public class SearchEngine {
         
         if (depth == 0) 
             return Evaluator.evaluate(node, myColor);
-        
 
+        Map<Move, Integer> scores = moves.parallelStream().collect(Collectors.toMap(m -> m, m -> quickMoveScore(node, m, toMove),
+                (v1, v2) -> v1));
+        
         moves.sort((a, b) -> {
-            int sa = quickMoveScore(node, a, toMove);
-            int sb = quickMoveScore(node, b, toMove);
+            int sa = scores.get(a);
+            int sb = scores.get(b);
             return maximizing ? Integer.compare(sb, sa) : Integer.compare(sa, sb);
         });
 
