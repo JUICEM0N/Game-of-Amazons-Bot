@@ -5,9 +5,56 @@ import java.util.*;
 public class Evaluator {
     private static final int W_MOBILITY = 8;
     private static final int W_TERRITORY = 2;
+    private static final int W_TRAPPED = 50;
 
     public static int evaluate(Board b, int myColor) {
         return evaluateSequential(b, myColor);
+    }
+
+    private static int evaluateTrappedAmazons(Board b, int myColor, int oppColor) {
+        int score = 0;
+        Board.Point[] myQueens = b.getQueens(myColor);
+        for (Board.Point q : myQueens) {
+            if (q == null) continue;
+
+            int moves = countMovesForQueen(b, q);
+            if (moves == 0) {
+                score -= 1;
+            } else {
+                score += Math.min(3, moves) / 3;
+            }
+        }
+
+        Board.Point[] oppQueens = b.getQueens(oppColor);
+        for (Board.Point q : oppQueens) {
+            if (q == null) continue;
+
+            int moves = countMovesForQueen(b, q);
+            if (moves == 0) {
+                score += 1;
+            }
+        }
+
+        return score;
+    }
+
+    private static int countMovesForQueen(Board b, Board.Point queen) {
+        int count = 0;
+
+        int[][] dirs = {{-1,0},{-1,1},{0,1},{1,1},{1,0},{1,-1},{0,-1},{-1,-1}};
+
+        for (int[] d : dirs) {
+            int r = queen.row + d[0];
+            int c = queen.col + d[1];
+
+            while (r >= 0 && r < Board.rows && c >= 0 && c < Board.cols &&
+                    b.getCell(r, c) == Board.empty) {
+                count++;
+                r += d[0];
+                c += d[1];
+            }
+        }
+        return count;
     }
 
     private static int evaluateSequential(Board b, int myColor) {
@@ -16,10 +63,10 @@ public class Evaluator {
         int myMoves = b.getAllPossibleMoves(myColor).size();
         int opMoves = b.getAllPossibleMoves(opp).size();
         int mobilityScore = myMoves - opMoves;
-
+        int trappedScore = evaluateTrappedAmazons(b, myColor, opp);
         int territoryScore = territoryDiffSequential(b, myColor, opp);
 
-        return W_MOBILITY * mobilityScore + W_TERRITORY * territoryScore;
+        return W_MOBILITY * mobilityScore + W_TERRITORY * territoryScore +  W_TRAPPED * trappedScore;
     }
 
     private static int territoryDiffSequential(Board b, int myColor, int oppColor) {
