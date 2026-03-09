@@ -1,6 +1,8 @@
 package ubc.cosc322;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 
 public class SearchEngine {
 
@@ -19,7 +21,12 @@ public class SearchEngine {
     private long totalPrunedMoves = 0;
     private long totalSearchTimeMs = 0;
     private long totalMovesPlayed = 0;
+    // Killer moves: store 2 moves per depth
+    private Move[][] killerMoves = new Move[MAX_DEPTH][2]; 
 
+    // History heuristic: track move effectiveness across the entire tree
+    private Map<String, Integer> historyTable = new HashMap<>();
+    
     public Move chooseMove(Board root, int myColor, long timeLimitMs) {
         long deadline = System.nanoTime() + timeLimitMs * 1_000_000L;
 
@@ -91,7 +98,7 @@ public class SearchEngine {
 
     private SearchResult alphaBetaRoot(Board root, int depth, int myColor, long deadline) {
         ArrayList<Move> moves = root.getAllPossibleMoves(myColor);
-
+        
         if (moves.isEmpty()) 
             return new SearchResult(null, -INF + 1, false);
         
@@ -141,7 +148,16 @@ public class SearchEngine {
         int toMove = maximizing ? myColor : opponent(myColor);
 
         ArrayList<Move> moves = node.getAllPossibleMoves(toMove);
-
+        
+        // Move ordering:
+        // 1. Put killer moves first if present at this depth
+        for (int k = 0; k < 2; k++) {
+            Move km = killerMoves[depth][k];
+            if (km != null && moves.contains(km)) {
+                moves.remove(km);
+                moves.add(0, km);
+            }
+        }
         if (moves.isEmpty()) 
             return maximizing ? (-INF + 10) : (INF - 10);
         
@@ -150,8 +166,8 @@ public class SearchEngine {
         
 
         moves.sort((a, b) -> {
-            int sa = quickMoveScore(node, a, toMove);
-            int sb = quickMoveScore(node, b, toMove);
+            int sa = quickMoveScore(node, a, toMove) + getHistoryScore(a);
+            int sb = quickMoveScore(node, b, toMove) + getHistoryScore(b);
             return maximizing ? Integer.compare(sb, sa) : Integer.compare(sa, sb);
         });
 
@@ -168,6 +184,14 @@ public class SearchEngine {
                 if (alpha >= beta) {
                     cutoffs++;
                     prunedMoves += (moves.size() - moves.indexOf(m) - 1);
+                     // 1. Update history heuristic
+                    incrementHistoryScore(m, depth);
+
+                    // 2. Update killer moves if not already present
+                    if (killerMoves[depth][0] == null || !killerMoves[depth][0].equals(m)) {
+                        killerMoves[depth][1] = killerMoves[depth][0];
+                        killerMoves[depth][0] = m;
+                    }
                     break;
                 }
             }
@@ -191,7 +215,15 @@ public class SearchEngine {
             return value;
         }
     }
-
+    private int getHistoryScore(Move m) {
+        String key = m.queenStart.row + "," + m.queenStart.col + "->" + m.queenEnd.row + "," + m.queenEnd.col;
+        return historyTable.getOrDefault(key, 0);
+    }
+    private void incrementHistoryScore(Move m, int depth) {
+        String key = m.queenStart.row + "," + m.queenStart.col + "->" + m.queenEnd.row + "," + m.queenEnd.col;
+        int prev = historyTable.getOrDefault(key, 0);
+        historyTable.put(key, prev + (1 << depth)); // weight by depth
+    }
     private int quickMoveScore(Board b, Move m, int moverColor) {
         Board child = new Board(b);
         child.makeMove(m);
