@@ -1,6 +1,7 @@
 package ubc.cosc322;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 public class SearchEngine {
@@ -8,19 +9,21 @@ public class SearchEngine {
     private static final int INF = 1_000_000_000;
     private static final int MAX_DEPTH = 50;
     private static final boolean DEBUG = false;
-    
-    // private long prunedBranches = 0;
-    // private long nodes = 0;
+    private static final int TT_MAX_ENTRIES = 1_000_000;
 
     private long nodes = 0;
     private long cutoffs = 0;
     private long prunedMoves = 0;
+    private long ttHits = 0;
 
     private long totalNodes = 0;
     private long totalCutoffs = 0;
     private long totalPrunedMoves = 0;
     private long totalSearchTimeMs = 0;
     private long totalMovesPlayed = 0;
+    private long totalTtHits = 0;
+
+    private final TranspositionTable tt = new TranspositionTable(TT_MAX_ENTRIES);
 
     public Move chooseMove(Board root, int myColor, long timeLimitMs) {
         long deadline = System.nanoTime() + timeLimitMs * 1_000_000L;
@@ -28,6 +31,7 @@ public class SearchEngine {
         nodes = 0;
         cutoffs = 0;
         prunedMoves = 0;
+        ttHits = 0;
 
         long moveStartMs = System.currentTimeMillis();
 
@@ -35,48 +39,20 @@ public class SearchEngine {
         int bestScore = -INF;
 
         for (int depth = 1; depth <= MAX_DEPTH; depth++) {
-
             if (System.nanoTime() >= deadline) break;
 
-            long iterStartMs = System.currentTimeMillis();
             SearchResult res = alphaBetaRoot(root, depth, myColor, deadline);
-            long iterElapsed = System.currentTimeMillis() - iterStartMs;
-
-            // SearchResult res = alphaBetaRoot(root, depth, myColor, deadline);
-
-            // long elapsed = System.currentTimeMillis() - moveStartMs;
-
-            if (DEBUG) {
-                // long nps = (nodes * 1000L) / (Math.max(1, (System.currentTimeMillis() - moveStartMs)));
-                // System.out.println("[ID] depth=" + depth +
-                //         " bestScore=" + res.score +
-                //         " bestMove=" + res.bestMove +
-                //         " iterTime=" + iterElapsed + "ms" +
-                //         " nodes=" + nodes +
-                //         " cutoffs=" + cutoffs +
-                //         " prunedMoves=" + prunedMoves +
-                //         " nps=" + nps);
-            }
-
-            // System.out.println(
-            //     "[Search Stats] depth=" + depth +
-            //     " nodes=" + nodes +
-            //     " pruned=" + prunedBranches +
-            //     " time=" + elapsed + "ms"
-            // );
 
             if (res.bestMove != null) {
                 bestMove = res.bestMove;
                 bestScore = res.score;
             }
-            
             if (res.timedOut) break;
         }
 
         if (bestMove == null) {
             ArrayList<Move> moves = root.getAllPossibleMoves(myColor);
-            if (!moves.isEmpty()) 
-                return moves.get(0);
+            if (!moves.isEmpty()) return moves.get(0);
         }
 
         long moveElapsedMs = System.currentTimeMillis() - moveStartMs;
@@ -86,119 +62,146 @@ public class SearchEngine {
         totalPrunedMoves += prunedMoves;
         totalSearchTimeMs += moveElapsedMs;
         totalMovesPlayed++;
+        totalTtHits += ttHits;
 
-        System.out.println("[Move Done] Best Move: " + bestMove + 
-                           " | Score: " + bestScore + 
-                           " | Nodes: " + nodes + 
-                           " | Time: " + moveElapsedMs + "ms");
-        
+        if (DEBUG) {
+            System.out.println("[Move Done] Best Move: " + bestMove +
+                    " | Score: " + bestScore +
+                    " | Nodes: " + nodes +
+                    " | TT Hits: " + ttHits +
+                    " | TT Size: " + tt.size() +
+                    " | Time: " + moveElapsedMs + "ms");
+        }
+
         return bestMove;
     }
 
     private SearchResult alphaBetaRoot(Board root, int depth, int myColor, long deadline) {
         ArrayList<Move> moves = root.getAllPossibleMoves(myColor);
+        if (moves.isEmpty()) return new SearchResult(null, -INF + 1, false);
 
-        if (moves.isEmpty()) 
-            return new SearchResult(null, -INF + 1, false);
-        
-        Map<Move, Integer> scores = moves.parallelStream().collect(Collectors.toMap(m -> m, m -> quickMoveScore(root, m, myColor),
-                (v1, v2) -> v1));
-        moves.sort((a, b) -> Integer.compare(scores.get(b), scores.get(a)));
+        orderMoves(root, moves, myColor, true);
 
         int alpha = -INF;
         int beta = INF;
-
         Move bestMove = null;
         int bestScore = -INF;
 
-        for (Move m : moves) {
-            if (System.nanoTime() >= deadline) 
-                return new SearchResult(bestMove, bestScore, true);
+        for (int i = 0; i < moves.size(); i++) {
+            if (System.nanoTime() >= deadline) return new SearchResult(bestMove, bestScore, true);
 
+            Move m = moves.get(i);
             Board child = new Board(root);
             child.makeMove(m);
 
             int score = alphaBeta(child, depth - 1, alpha, beta, false, myColor, deadline);
 
-            if (System.nanoTime() >= deadline) 
-                return new SearchResult(bestMove, bestScore, true);
-
-            // System.out.println(\n            
-            //     "[Root Eval] depth=" + depth +\n            
-            //     " move=" + m +\n            
-            //     " score=" + score\n           
-            // );
+            if (System.nanoTime() >= deadline) return new SearchResult(bestMove, bestScore, true);
 
             if (score > bestScore) {
                 bestScore = score;
                 bestMove = m;
             }
             alpha = Math.max(alpha, bestScore);
-
-            // System.out.println("[Stats] prunedBranches=" + prunedBranches);
         }
+
+        tt.put(root.getZHash(), new TranspositionTable.TTEntry(
+                root.getZHash(), depth, bestScore, TranspositionTable.BoundType.EXACT, bestMove
+        ));
 
         return new SearchResult(bestMove, bestScore, false);
     }
 
     private int alphaBeta(Board node, int depth, int alpha, int beta, boolean maximizing, int myColor, long deadline) {
         nodes++;
-        if (System.nanoTime() >= deadline) return 0; 
+        if (System.nanoTime() >= deadline) return 0;
+
+        int alphaOriginal = alpha;
+        int betaOriginal = beta;
+
+        long key = node.getZHash();
+        TranspositionTable.TTEntry entry = tt.get(key);
+        if (entry != null && entry.getDepth() >= depth) {
+            ttHits++;
+            if (entry.getBoundType() == TranspositionTable.BoundType.EXACT) return entry.getValue();
+            if (entry.getBoundType() == TranspositionTable.BoundType.LOWER_BOUND) alpha = Math.max(alpha, entry.getValue());
+            else if (entry.getBoundType() == TranspositionTable.BoundType.UPPER_BOUND) beta = Math.min(beta, entry.getValue());
+            if (alpha >= beta) return entry.getValue();
+        }
 
         int toMove = maximizing ? myColor : opponent(myColor);
-
         ArrayList<Move> moves = node.getAllPossibleMoves(toMove);
 
-        if (moves.isEmpty()) 
-            return maximizing ? (-INF + 10) : (INF - 10);
-        
-        if (depth == 0) 
-            return Evaluator.evaluate(node, myColor);
+        if (moves.isEmpty()) return maximizing ? (-INF + 10) : (INF - 10);
+        if (depth == 0) return Evaluator.evaluate(node, myColor);
 
-        Map<Move, Integer> scores = moves.parallelStream().collect(Collectors.toMap(m -> m, m -> quickMoveScore(node, m, toMove),
-                (v1, v2) -> v1));
-        
+        maybePromoteTtMove(moves, entry);
+        orderMoves(node, moves, toMove, maximizing);
+
+        int value = maximizing ? -INF : INF;
+        Move bestMove = null;
+
+        for (int i = 0; i < moves.size(); i++) {
+            if (System.nanoTime() >= deadline) break;
+
+            Move m = moves.get(i);
+            Board child = new Board(node);
+            child.makeMove(m);
+
+            int childValue = alphaBeta(child, depth - 1, alpha, beta, !maximizing, myColor, deadline);
+
+            if (maximizing) {
+                if (childValue > value) {
+                    value = childValue;
+                    bestMove = m;
+                }
+                alpha = Math.max(alpha, value);
+            } else {
+                if (childValue < value) {
+                    value = childValue;
+                    bestMove = m;
+                }
+                beta = Math.min(beta, value);
+            }
+
+            if (alpha >= beta) {
+                cutoffs++;
+                prunedMoves += (moves.size() - i - 1);
+                break;
+            }
+        }
+
+        TranspositionTable.BoundType boundType = classifyBound(value, alphaOriginal, betaOriginal);
+        tt.put(key, new TranspositionTable.TTEntry(key, depth, value, boundType, bestMove));
+
+        return value;
+    }
+
+    private void orderMoves(Board node, ArrayList<Move> moves, int moverColor, boolean maximizing) {
+        Map<Move, Integer> scores = moves.parallelStream().collect(
+                Collectors.toMap(m -> m, m -> quickMoveScore(node, m, moverColor), (a, b) -> a)
+        );
         moves.sort((a, b) -> {
             int sa = scores.get(a);
             int sb = scores.get(b);
             return maximizing ? Integer.compare(sb, sa) : Integer.compare(sa, sb);
         });
+    }
 
-        if (maximizing) {
-            int value = -INF;
-            for (Move m : moves) {
-                if (System.nanoTime() >= deadline) break;
-                
-                Board child = new Board(node);
-                child.makeMove(m);
-                value = Math.max(value, alphaBeta(child, depth - 1, alpha, beta, false, myColor, deadline));
-                alpha = Math.max(alpha, value);
-                
-                if (alpha >= beta) {
-                    cutoffs++;
-                    prunedMoves += (moves.size() - moves.indexOf(m) - 1);
-                    break;
-                }
-            }
-            return value;
-        } else {
-            int value = INF;
-            for (Move m : moves) {
-                if (System.nanoTime() >= deadline) break;
-                
-                Board child = new Board(node);
-                child.makeMove(m);
-                value = Math.min(value, alphaBeta(child, depth - 1, alpha, beta, true, myColor, deadline));
-                beta = Math.min(beta, value);
-                
-                if (alpha >= beta) {
-                    cutoffs++;
-                    prunedMoves += (moves.size() - moves.indexOf(m) - 1);
-                    break;
-                }
-            }
-            return value;
+    private void maybePromoteTtMove(ArrayList<Move> moves, TranspositionTable.TTEntry entry) {
+        if (entry == null || entry.getBestMove() == null || moves.isEmpty()) return;
+        Move ttMove = entry.getBestMove();
+        int idx = moves.indexOf(ttMove);
+        if (idx > 0) {
+            moves.set(idx, moves.get(0));
+            moves.set(0, ttMove);
         }
+    }
+
+    private TranspositionTable.BoundType classifyBound(int value, int alphaOriginal, int betaOriginal) {
+        if (value <= alphaOriginal) return TranspositionTable.BoundType.UPPER_BOUND;
+        if (value >= betaOriginal) return TranspositionTable.BoundType.LOWER_BOUND;
+        return TranspositionTable.BoundType.EXACT;
     }
 
     private int quickMoveScore(Board b, Move m, int moverColor) {
@@ -233,6 +236,8 @@ public class SearchEngine {
         System.out.println("Total nodes: " + totalNodes);
         System.out.println("Total cutoffs: " + totalCutoffs);
         System.out.println("Total pruned sibling moves: " + totalPrunedMoves);
+        System.out.println("Total TT hits: " + totalTtHits);
+        System.out.println("Current TT size: " + tt.size());
 
         long avgNodes = (totalMovesPlayed == 0) ? 0 : totalNodes / totalMovesPlayed;
         long avgTime = (totalMovesPlayed == 0) ? 0 : totalSearchTimeMs / totalMovesPlayed;
@@ -243,5 +248,4 @@ public class SearchEngine {
         System.out.println("Avg nodes/sec: " + nps);
         System.out.println("======================================\n");
     }
-
 }
