@@ -60,12 +60,9 @@ public class TranspositionTable {
 
     public void put(long key, TTEntry candidate) {
         TTEntry existing = map.get(key);
-        if (existing == null) {
-            if (map.size() >= maxEntries) map.clear();
+        if (existing == null || candidate.getDepth() >= existing.getDepth()) {
             map.put(key, candidate);
-            return;
         }
-        if (candidate.getDepth() >= existing.getDepth()) map.put(key, candidate);
     }
 
     public int size() {

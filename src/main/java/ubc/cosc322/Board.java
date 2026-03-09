@@ -18,6 +18,12 @@ public class Board {
 
     private static final long ZOBRIST_SEED = 322_2026_03_09L;
     private static final long[][] ZOBRIST = createZobristTable();
+    private static final long ZOBRIST_SIDE;
+
+    static {
+        Random rng = new Random(ZOBRIST_SEED ^ 0xDEADBEEFL);
+        ZOBRIST_SIDE = rng.nextLong();
+    }
 
     private byte[] board;
 
@@ -68,6 +74,7 @@ public class Board {
             }
         }
         this.zHash = computeFullZHash();
+        if (isBlackTurn) this.zHash ^= ZOBRIST_SIDE;
     }
 
     public Board(Board parent) {
@@ -92,10 +99,16 @@ public class Board {
 
         if (board[startIdx] != color) return false;
         if (board[endIdx] != empty) return false;
-        if (board[arrowIdx] != empty) return false;
 
         setCell(startIdx, empty);
         setCell(endIdx, color);
+
+        if (board[arrowIdx] != empty) {
+            setCell(endIdx, empty);
+            setCell(startIdx, color);
+            return false;
+        }
+
         setCell(arrowIdx, arrow);
 
         int teamStart = isBlackTurn ? 0 : 4;
@@ -107,6 +120,7 @@ public class Board {
             }
         }
 
+        zHash ^= ZOBRIST_SIDE;
         isBlackTurn = !isBlackTurn;
         return true;
     }
@@ -122,6 +136,8 @@ public class Board {
         setCell(arrowIdx, empty);
         setCell(endIdx, empty);
         setCell(startIdx, color);
+
+        zHash ^= ZOBRIST_SIDE;
 
         int teamStart = isBlackTurn ? 0 : 4;
         int teamEnd = teamStart + 4;
