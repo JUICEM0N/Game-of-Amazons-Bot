@@ -2,6 +2,7 @@ package ubc.cosc322;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Random;
 
 public class Board {
 
@@ -9,16 +10,22 @@ public class Board {
     public static final byte black = 1;
     public static final byte white = 2;
     public static final byte arrow = 3;
-    
+
     public static final int rows = 10;
     public static final int cols = 10;
+    private static final int CELL_COUNT = rows * cols;
+    private static final int PIECE_STATES = 4; // empty, black, white, arrow
 
-    private byte[] board; 
-    
+    private static final long ZOBRIST_SEED = 322_2026_03_09L;
+    private static final long[][] ZOBRIST = createZobristTable();
+
+    private byte[] board;
+
     // indices 0-3 are black, 4-7 are white
-    private int[] queenIndices; 
-    
-    private boolean isBlackTurn = true; 
+    private int[] queenIndices;
+
+    private boolean isBlackTurn = true;
+    private long zHash = 0L;
 
     public static class Point {
         public int row;
@@ -31,15 +38,15 @@ public class Board {
 
         @Override
         public String toString() {
-            return "(" +row+ ", "+col+")";
+            return "(" + row + ", " + col + ")";
         }
     }
 
     public Board(ArrayList<Integer> gameState) {
-        this.board = new byte[rows * cols];
+        this.board = new byte[CELL_COUNT];
         this.queenIndices = new int[8];
         Arrays.fill(this.queenIndices, -1);
-        
+
         int blackIndex = 0;
         int whiteIndex = 0;
 
@@ -47,45 +54,49 @@ public class Board {
             for (int j = 0; j < cols; j++) {
                 int correctIndex = (i + 1) * 11 + (j + 1);
                 int boardIndex = i * cols + j;
-                
+
                 if (correctIndex < gameState.size()) {
-                     int value = gameState.get(correctIndex);
-                     this.board[boardIndex] = (byte) value;
-                     
-                     if (value == black) {
-                         if (blackIndex < 4) this.queenIndices[blackIndex++] = boardIndex;
-                     } else if (value == white) {
-                         if (whiteIndex < 4) this.queenIndices[4 + whiteIndex++] = boardIndex;
-                     }
+                    int value = gameState.get(correctIndex);
+                    this.board[boardIndex] = (byte) value;
+
+                    if (value == black) {
+                        if (blackIndex < 4) this.queenIndices[blackIndex++] = boardIndex;
+                    } else if (value == white) {
+                        if (whiteIndex < 4) this.queenIndices[4 + whiteIndex++] = boardIndex;
+                    }
                 }
             }
         }
+        this.zHash = computeFullZHash();
     }
 
     public Board(Board parent) {
-        this.board = new byte[rows * cols];
+        this.board = new byte[CELL_COUNT];
         this.queenIndices = new int[8];
 
         System.arraycopy(parent.board, 0, this.board, 0, this.board.length);
         System.arraycopy(parent.queenIndices, 0, this.queenIndices, 0, this.queenIndices.length);
-        
+
         this.isBlackTurn = parent.isBlackTurn;
+        this.zHash = parent.zHash;
     }
-    
+
     public boolean makeMove(Move m) {
-        int startIdx = m.queenStart.row * cols + m.queenStart.col;
-        int endIdx = m.queenEnd.row * cols + m.queenEnd.col;
-        int arrowIdx = m.arrowPos.row * cols + m.arrowPos.col;
-        
+        int startIdx = toIndex(m.queenStart.row, m.queenStart.col);
+        int endIdx = toIndex(m.queenEnd.row, m.queenEnd.col);
+        int arrowIdx = toIndex(m.arrowPos.row, m.arrowPos.col);
+
+        if (!isValidIndex(startIdx) || !isValidIndex(endIdx) || !isValidIndex(arrowIdx)) return false;
+
         byte color = isBlackTurn ? black : white;
 
-        if (startIdx < 0 || startIdx >= board.length || board[startIdx] != color) {
-            return false;
-        }
-        
-        board[startIdx] = empty;
-        board[endIdx] = color;
-        board[arrowIdx] = arrow;
+        if (board[startIdx] != color) return false;
+        if (board[endIdx] != empty) return false;
+        if (board[arrowIdx] != empty) return false;
+
+        setCell(startIdx, empty);
+        setCell(endIdx, color);
+        setCell(arrowIdx, arrow);
 
         int teamStart = isBlackTurn ? 0 : 4;
         int teamEnd = teamStart + 4;
@@ -104,13 +115,13 @@ public class Board {
         isBlackTurn = !isBlackTurn;
         byte color = isBlackTurn ? black : white;
 
-        int startIdx = m.queenStart.row * cols + m.queenStart.col;
-        int endIdx = m.queenEnd.row * cols + m.queenEnd.col;
-        int arrowIdx = m.arrowPos.row * cols + m.arrowPos.col;
+        int startIdx = toIndex(m.queenStart.row, m.queenStart.col);
+        int endIdx = toIndex(m.queenEnd.row, m.queenEnd.col);
+        int arrowIdx = toIndex(m.arrowPos.row, m.arrowPos.col);
 
-        board[arrowIdx] = empty;
-        board[endIdx] = empty;
-        board[startIdx] = color;
+        setCell(arrowIdx, empty);
+        setCell(endIdx, empty);
+        setCell(startIdx, color);
 
         int teamStart = isBlackTurn ? 0 : 4;
         int teamEnd = teamStart + 4;
@@ -120,6 +131,10 @@ public class Board {
                 break;
             }
         }
+    }
+
+    public long getZHash() {
+        return zHash;
     }
 
     @Override
@@ -132,7 +147,6 @@ public class Board {
                 if (val == black) sym = 'B';
                 else if (val == white) sym = 'W';
                 else if (val == arrow) sym = 'X';
-                
                 sb.append(sym).append(" ");
             }
             sb.append("\n");
@@ -152,25 +166,25 @@ public class Board {
             int r = currentPos / cols;
             int c = currentPos % cols;
             Point startPoint = new Point(r, c);
-            
+
             ArrayList<Integer> destinations = getSliderMovesIndices(r, c);
-            
+
             for (int dest : destinations) {
                 board[currentPos] = empty;
                 board[dest] = (byte) color;
-                
+
                 int destR = dest / cols;
                 int destC = dest % cols;
                 Point endPoint = new Point(destR, destC);
-                
+
                 ArrayList<Integer> arrowShots = getSliderMovesIndices(destR, destC);
-                
+
                 for (int arrow : arrowShots) {
-                     int arrowR = arrow / cols;
-                     int arrowC = arrow % cols;
-                     moves.add(new Move(startPoint, endPoint, new Point(arrowR, arrowC)));
+                    int arrowR = arrow / cols;
+                    int arrowC = arrow % cols;
+                    moves.add(new Move(startPoint, endPoint, new Point(arrowR, arrowC)));
                 }
-                
+
                 board[dest] = empty;
                 board[currentPos] = (byte) color;
             }
@@ -178,9 +192,9 @@ public class Board {
         return moves;
     }
 
-    public int getCell(int r, int c) { 
+    public int getCell(int r, int c) {
         if (r < 0 || r >= rows || c < 0 || c >= cols) return -1;
-        return board[r * cols + c]; 
+        return board[r * cols + c];
     }
 
     public Point[] getQueens(int color) {
@@ -188,47 +202,72 @@ public class Board {
         Point[] queens = new Point[4];
         for (int i = 0; i < 4; i++) {
             int idx = queenIndices[teamStart + i];
-            if (idx != -1) {
-                queens[i] = new Point(idx / cols, idx % cols);
-            }
+            if (idx != -1) queens[i] = new Point(idx / cols, idx % cols);
         }
         return queens;
     }
-    
+
     public ArrayList<Point> sliderMovesFrom(Point p) {
         return sliderMovesFrom(p.row, p.col);
     }
-    
+
     public ArrayList<Point> sliderMovesFrom(int r, int c) {
         ArrayList<Point> moves = new ArrayList<>();
         ArrayList<Integer> indices = getSliderMovesIndices(r, c);
-        for(int idx : indices) {
-            moves.add(new Point(idx / cols, idx % cols));
-        }
+        for (int idx : indices) moves.add(new Point(idx / cols, idx % cols));
         return moves;
     }
 
     private ArrayList<Integer> getSliderMovesIndices(int r, int c) {
         ArrayList<Integer> targets = new ArrayList<>();
-        int[][] directions = { 
-            {-1, 0}, {-1, 1}, {0, 1}, {1, 1}, 
-            {1, 0}, {1, -1}, {0, -1}, {-1, -1} 
+        int[][] directions = {
+                {-1, 0}, {-1, 1}, {0, 1}, {1, 1},
+                {1, 0}, {1, -1}, {0, -1}, {-1, -1}
         };
-        
+
         for (int[] d : directions) {
             int currRow = r + d[0];
             int currCol = c + d[1];
-            
-            while (currRow >= 0 && currRow < rows && 
-                   currCol >= 0 && currCol < cols) {
+
+            while (currRow >= 0 && currRow < rows && currCol >= 0 && currCol < cols) {
                 int idx = currRow * cols + currCol;
                 if (board[idx] != empty) break;
-                
                 targets.add(idx);
                 currRow += d[0];
                 currCol += d[1];
             }
         }
         return targets;
+    }
+
+    private int toIndex(int row, int col) {
+        return row * cols + col;
+    }
+
+    private boolean isValidIndex(int idx) {
+        return idx >= 0 && idx < CELL_COUNT;
+    }
+
+    private void setCell(int idx, byte newValue) {
+        byte oldValue = board[idx];
+        if (oldValue == newValue) return;
+        zHash ^= ZOBRIST[idx][oldValue];
+        board[idx] = newValue;
+        zHash ^= ZOBRIST[idx][newValue];
+    }
+
+    private long computeFullZHash() {
+        long hash = 0L;
+        for (int i = 0; i < CELL_COUNT; i++) hash ^= ZOBRIST[i][board[i]];
+        return hash;
+    }
+
+    private static long[][] createZobristTable() {
+        long[][] table = new long[CELL_COUNT][PIECE_STATES];
+        Random rng = new Random(ZOBRIST_SEED);
+        for (int i = 0; i < CELL_COUNT; i++) {
+            for (int s = 0; s < PIECE_STATES; s++) table[i][s] = rng.nextLong();
+        }
+        return table;
     }
 }
