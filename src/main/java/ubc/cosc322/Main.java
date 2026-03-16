@@ -23,7 +23,7 @@ import ygraph.ai.smartfox.games.amazons.AmazonsGameMessage;
  */
 public class Main extends GamePlayer {
 
-    private static final int TIME_LIMIT = 29000; // In ms
+    private static final int TIME_LIMIT = 10000; // In ms
 
     private GameClient gameClient; 
     private BaseGameGUI gamegui;
@@ -43,6 +43,8 @@ public class Main extends GamePlayer {
     	String passwd = "";
     	
     	Main player = new Main(userName, passwd);
+
+        Evaluator.initialize();
 
 		if(player.getGameGUI() == null) {
             player.Go();

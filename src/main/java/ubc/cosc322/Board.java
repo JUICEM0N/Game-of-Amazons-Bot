@@ -286,4 +286,8 @@ public class Board {
         }
         return table;
     }
+
+    public boolean isBlackTurn(){
+        return isBlackTurn;
+    }
 }
