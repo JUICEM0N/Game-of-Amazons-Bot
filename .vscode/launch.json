@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Game of Amazons Bot",
+            "request": "launch",
+            "mainClass": "ubc.cosc322.Main",
+            "projectName": "team-00",
+            "javaExec": "C:\\Program Files\\Eclipse Adoptium\\jdk-25.0.1.8-hotspot\\bin\\java.exe",
+            "vmArgs": "-Xmx8g -XX:+UseZGC -XX:+AlwaysPreTouch"
+        }
+    ]
+}
