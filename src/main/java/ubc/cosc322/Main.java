@@ -23,7 +23,7 @@ import ygraph.ai.smartfox.games.amazons.AmazonsGameMessage;
  */
 public class Main extends GamePlayer {
 
-    private static final int TIME_LIMIT = 10000; // In ms
+    private static final int TIME_LIMIT = 2900; // In ms
 
     private GameClient gameClient; 
     private BaseGameGUI gamegui;
@@ -43,8 +43,6 @@ public class Main extends GamePlayer {
     	String passwd = "";
     	
     	Main player = new Main(userName, passwd);
-
-        Evaluator.initialize();
 
 		if(player.getGameGUI() == null) {
             player.Go();
@@ -88,44 +86,44 @@ public class Main extends GamePlayer {
     @Override
     public boolean handleGameMessage(String messageType, Map<String, Object> msgDetails) {
     	//called by the GameClient when it receives a game-related message
-    System.out.println("Message type: " + messageType + "\nDetails: " + msgDetails.toString());
+        System.out.println("Message type: " + messageType + "\nDetails: " + msgDetails.toString());
     
-    switch (messageType) {
-            case GameMessage.GAME_STATE_BOARD:
-                //initial board state sent when joining a game
-                ArrayList<Integer> gameState = (ArrayList<Integer>) msgDetails.get(AmazonsGameMessage.GAME_STATE);
-                this.board = new Board(gameState);
-                gamegui.setGameState(gameState);
-                System.out.println("initialized...");
-                break;
+        switch (messageType) {
+                case GameMessage.GAME_STATE_BOARD:
+                    //initial board state sent when joining a game
+                    ArrayList<Integer> gameState = (ArrayList<Integer>) msgDetails.get(AmazonsGameMessage.GAME_STATE);
+                    this.board = new Board(gameState);
+                    gamegui.setGameState(gameState);
+                    System.out.println("initialized...");
+                    break;
 
-            case GameMessage.GAME_ACTION_START:
+                case GameMessage.GAME_ACTION_START:
 
-                String blackPlayerName = (String) msgDetails.get(AmazonsGameMessage.PLAYER_BLACK);
-                String whitePlayerName = (String) msgDetails.get(AmazonsGameMessage.PLAYER_WHITE);
-                
-                if (this.userName.equals(blackPlayerName)) {
-                    this.isBlack = true;
-                    makeMove(); 
-                } else if (this.userName.equals(whitePlayerName)) {
-                    this.isBlack = false;
-                    System.out.println("Waiting for Black to move...");
-                }
-                break;
+                    String blackPlayerName = (String) msgDetails.get(AmazonsGameMessage.PLAYER_BLACK);
+                    String whitePlayerName = (String) msgDetails.get(AmazonsGameMessage.PLAYER_WHITE);
+                    
+                    if (this.userName.equals(blackPlayerName)) {
+                        this.isBlack = true;
+                        makeMove(); 
+                    } else if (this.userName.equals(whitePlayerName)) {
+                        this.isBlack = false;
+                        System.out.println("Waiting for Black to move...");
+                    }
+                    break;
 
-            case GameMessage.GAME_ACTION_MOVE:
-                updateGUI(msgDetails);
-                
-                Move opponentMove = new Move(msgDetails);
-                board.makeMove(opponentMove);              
-                makeMove();
-                break;
-                
-            default:
-                break;
-        }
+                case GameMessage.GAME_ACTION_MOVE:
+                    updateGUI(msgDetails);
+                    
+                    Move opponentMove = new Move(msgDetails);
+                    board.makeMove(opponentMove);              
+                    makeMove();
+                    break;
+                    
+                default:
+                    break;
+            }
 
-    return true;   	
+        return true;   	
     }
 
     private final SearchEngine engine = new SearchEngine();
